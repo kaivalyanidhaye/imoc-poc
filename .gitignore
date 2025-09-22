@@ -1,0 +1,74 @@
+# ----------------------------
+# OS / Editor junk
+# ----------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# ----------------------------
+# Python
+# ----------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+
+# ----------------------------
+# Node.js
+# ----------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ----------------------------
+# Terraform
+# ----------------------------
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ----------------------------
+# Docker / Compose runtime
+# ----------------------------
+**/data/**
+**/tmp/**
+.env
+docker-compose.override.yml
+
+# ----------------------------
+# Logs / Test outputs
+# ----------------------------
+*.log
+logs/
+reports/
+coverage/
+k6-results.json
+k6-results.html
+
+# ----------------------------
+# Helm / K8s
+# ----------------------------
+charts/**/charts/
+charts/**/tmpcharts/
+*.lock
+
+# ----------------------------
+# Credentials (never commit!)
+# ----------------------------
+aws-credentials.csv
+secrets.json
+*.pem
+*.key
+*.crt
