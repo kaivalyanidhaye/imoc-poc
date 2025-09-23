@@ -1,7 +1,7 @@
 ﻿# IMOC POC — Vendor-Neutral IT Monitoring & Observability
 
 
-[![CI](https://github.com/kalyananidhaye/imoc-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/imoc-poc/actions)
+[![CI](https://github.com/kaivalyanidhaye/imoc-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/imoc-poc/actions)
 
 ![observability](https://img.shields.io/badge/observability-otel-blue)
 ![sre](https://img.shields.io/badge/sre-slo%2Fburn--rate-green)
