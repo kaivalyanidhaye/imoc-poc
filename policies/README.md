@@ -1,3 +1,4 @@
-﻿# policies
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Policy-as-Code (Conftest/OPA):
+- deny :latest tags
+- require CPU/memory limits
+- block PII labels

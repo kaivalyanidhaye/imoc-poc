@@ -1,3 +1,1 @@
-﻿# apps/monolith-java
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Monolith Java app (VM). Week 1: run with OTel Java agent. Week 2+: add Micrometer.

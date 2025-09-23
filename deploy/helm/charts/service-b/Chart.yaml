@@ -1,0 +1,4 @@
+﻿apiVersion: v2
+name: service-b
+version: 0.1.0
+description: Cloud-native microservice for POC

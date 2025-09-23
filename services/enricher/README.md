@@ -1,3 +1,6 @@
-﻿# services/enricher
+﻿Webhook listener that enriches Alertmanager alerts and:
+- creates ServiceNow incidents
+- triggers Rundeck jobs
+- posts results back to the incident
 
-Placeholder file to keep this folder in Git until real content is added.
+Week 3: implement.

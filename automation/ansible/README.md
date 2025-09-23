@@ -1,3 +1,3 @@
-﻿# automation/ansible
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Ansible plays:
+- bootstrap_vm.yml (Docker, Compose, k3s, exporters)
+- runbooks_restart.yml, runbooks_diagnostics.yml

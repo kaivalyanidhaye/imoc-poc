@@ -1,3 +1,4 @@
-﻿# automation/rundeck
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Rundeck jobs (YAML):
+- restart_and_test
+- collect_diagnostics
+- toggle_feature_flag

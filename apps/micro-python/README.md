@@ -1,3 +1,1 @@
-﻿# apps/micro-python
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Microservice (K8s). Week 2: OTel SDK + Helm deployment. 

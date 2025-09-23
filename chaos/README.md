@@ -1,3 +1,1 @@
-﻿# chaos
-
-Placeholder file to keep this folder in Git until real content is added.
+﻿Drills: DB latency, pod kill, memory leak (Week 3+)
