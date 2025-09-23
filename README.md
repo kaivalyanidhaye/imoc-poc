@@ -1,5 +1,23 @@
 ﻿# IMOC POC — Vendor-Neutral IT Monitoring & Observability
 
+
+[![CI](https://github.com/kalyananidhaye/imoc-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/imoc-poc/actions)
+
+![observability](https://img.shields.io/badge/observability-otel-blue)
+![sre](https://img.shields.io/badge/sre-slo%2Fburn--rate-green)
+![prometheus](https://img.shields.io/badge/prometheus-metrics-orange)
+![grafana](https://img.shields.io/badge/grafana-dashboards-yellow)
+![loki](https://img.shields.io/badge/loki-logs-lightgrey)
+![tempo](https://img.shields.io/badge/tempo-traces-blueviolet)
+![pyroscope](https://img.shields.io/badge/pyroscope-profiling-red)
+![k6](https://img.shields.io/badge/k6-synthetic%20tests-brightgreen)
+![servicenow](https://img.shields.io/badge/itsm-servicenow-lightblue)
+![ansible](https://img.shields.io/badge/automation-ansible-darkred)
+![rundeck](https://img.shields.io/badge/automation-rundeck-purple)
+![terraform](https://img.shields.io/badge/iac-terraform-593d88)
+![aws](https://img.shields.io/badge/cloud-aws-ff9900)
+
+
 This repo contains a free-tier, OSS-first proof of concept for:
 - **SRE**: SLIs/SLOs, burn-rate alerts, chaos drills, postmortems
 - **Observability**: Metrics, Logs, Traces, Profiles, Synthetic (MELT+P) via OpenTelemetry
