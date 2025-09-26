@@ -75,3 +75,7 @@ secrets.json
 *.pem
 *.key
 *.crt
+# Extra SSH private key safety
+.ssh/
+id_rsa
+id_ed25519
