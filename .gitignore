@@ -39,6 +39,9 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Allow the one safe tfvars with only region + public key
+!infra/terraform/terraform.tfvars
+
 # ----------------------------
 # Docker / Compose runtime
 # ----------------------------
