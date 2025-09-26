@@ -7,7 +7,9 @@ data "aws_ami" "al2023" {
   }
 }
 
-data "aws_vpc" "default" { default = true }
+data "aws_vpc" "default" {
+  default = true
+}
 
 data "aws_subnets" "default" {
   filter {
@@ -26,9 +28,9 @@ resource "aws_security_group" "observability" {
   description = "Observability Core SG"
   vpc_id      = data.aws_vpc.default.id
 
-  # Core access
+  # Core access (POC-open; tighten in prod)
   ingress { from_port = 22   to_port = 22   protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # SSH
-  ingress { from_port = 80   to_port = 80   protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # (optional) HTTP/reverse-proxy
+  ingress { from_port = 80   to_port = 80   protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # optional: future reverse-proxy
   ingress { from_port = 3000 to_port = 3000 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # Grafana
   ingress { from_port = 9090 to_port = 9090 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # Prometheus
   ingress { from_port = 9093 to_port = 9093 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }   # Alertmanager

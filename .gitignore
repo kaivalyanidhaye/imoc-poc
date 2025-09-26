@@ -74,8 +74,10 @@ aws-credentials.csv
 secrets.json
 *.pem
 *.key
+*.pfx
 *.crt
 # Extra SSH private key safety
 .ssh/
+!**/*.pub
 id_rsa
 id_ed25519
