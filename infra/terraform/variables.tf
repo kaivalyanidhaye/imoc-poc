@@ -1,19 +1,19 @@
-﻿variable "aws_region" {
+variable "aws_region" {
   type        = string
-  description = "AWS region, e.g., ap-south-1"
+  description = "us-east-1"
 }
 
 variable "ssh_public_key" {
   type        = string
-  description = "Your ED25519/RSA public key contents"
+  description = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG+I6NPahrhQZN19f6ulX55HFFAqEMT30yFH7Ocsep+j itoc-poc"
 }
 
 variable "instance_name" {
-  type        = string
-  default     = "itoc-week1"
+  type    = string
+  default = "itoc-week1"
 }
 
 variable "instance_type" {
-  type        = string
-  default     = "t2.micro"
+  type    = string
+  default = "t2.micro"
 }

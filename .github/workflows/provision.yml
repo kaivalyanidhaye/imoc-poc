@@ -17,13 +17,29 @@ jobs:
       id-token: write
     env:
       TF_IN_AUTOMATION: true
+
     steps:
       - uses: actions/checkout@v4
+
+      # Lint-friendly: set TF plugin cache dir under the workspace and create it
+      - name: Set TF plugin cache dir
+        shell: bash
+        run: |
+          echo "TF_PLUGIN_CACHE_DIR=$GITHUB_WORKSPACE/.tf-cache/plugins" >> "$GITHUB_ENV"
+          mkdir -p "$GITHUB_WORKSPACE/.tf-cache/plugins"
 
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.7.5
 
+      # Cache Terraform provider plugins for faster init on reruns
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: .tf-cache/plugins
+          key: ${{ runner.os }}-tfplug-${{ hashFiles('infra/terraform/.terraform.lock.hcl') }}
+
+      # AWS credentials
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -31,10 +47,58 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      # Guardrail: Region coherence (terraform.tfvars vs AWS_REGION secret)
+      - name: Check region coherence (tfvars vs secret)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f infra/terraform/terraform.tfvars ]; then
+            echo "::error::infra/terraform/terraform.tfvars not found"
+            exit 1
+          fi
+          tfvars_region=$(grep -E '^\s*aws_region\s*=' infra/terraform/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '[:space:]')
+          echo "tfvars region: $tfvars_region; secret AWS_REGION: ${{ secrets.AWS_REGION }}"
+          if [ -n "${{ secrets.AWS_REGION }}" ] && [ "${{ secrets.AWS_REGION }}" != "$tfvars_region" ]; then
+            echo "::error::Region mismatch. Make terraform.tfvars and AWS_REGION secret the same."
+            exit 1
+          fi
+
+      # Init before validate/lint/plan/apply
       - name: Terraform Init
         working-directory: infra/terraform
+        env:
+          TF_PLUGIN_CACHE_DIR: ${{ env.TF_PLUGIN_CACHE_DIR }}
         run: terraform init -input=false
 
+      # Guardrail: formatting
+      - name: Terraform Fmt Check
+        working-directory: infra/terraform
+        run: terraform fmt -check -recursive
+
+      # Guardrail: validate
+      - name: Terraform Validate
+        working-directory: infra/terraform
+        run: terraform validate -no-color
+
+      # Guardrail: TFLint (static analysis)
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v5
+        with:
+          tflint_version: v0.59.1 # match your local
+
+      - name: Cache TFLint plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/.tflint.d/plugins
+          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+
+      - name: TFLint init
+        run: tflint --init
+
+      - name: TFLint (compact)
+        run: tflint --format=compact
+
+      # Plan/Apply only for 'apply'
       - name: Terraform Plan
         if: inputs.action == 'apply'
         working-directory: infra/terraform
@@ -45,16 +109,17 @@ jobs:
         working-directory: infra/terraform
         run: terraform apply -input=false -auto-approve tfplan
 
-      # Capture outputs -> env + job outputs
+      # Capture outputs -> env + job outputs + summary
       - name: Capture Terraform outputs
         if: inputs.action == 'apply'
         id: tf_outputs
+        shell: bash
         run: |
           ip=$(cd infra/terraform && terraform output -raw public_ip)
           dns=$(cd infra/terraform && terraform output -raw public_dns)
-          echo "VM_IP=$ip"  >> $GITHUB_ENV
+          echo "VM_IP=$ip"   >> $GITHUB_ENV
           echo "VM_DNS=$dns" >> $GITHUB_ENV
-          echo "vm_ip=$ip"  >> $GITHUB_OUTPUT
+          echo "vm_ip=$ip"   >> $GITHUB_OUTPUT
           echo "vm_dns=$dns" >> $GITHUB_OUTPUT
           {
             echo "### Provisioned Host"
@@ -63,17 +128,16 @@ jobs:
             echo "- **DNS:** $dns"
           } >> $GITHUB_STEP_SUMMARY
 
-      # Update a repository SECRET (requires PAT)      
+      # Update a repository SECRET (requires PAT in GH_PAT_ADMIN)
       - name: Update VM_HOST secret
         if: inputs.action == 'apply'
         uses: gliech/create-github-secret-action@v1
-        env:
-          VM_IP: ${{ steps.tf_outputs.outputs.vm_ip }}
         with:
           name: VM_HOST
-          value: ${{ env.VM_IP }}
+          value: ${{ steps.tf_outputs.outputs.vm_ip }}
           pa_token: ${{ secrets.GH_PAT_ADMIN }}
 
+      # Destroy path
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         working-directory: infra/terraform

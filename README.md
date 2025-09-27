@@ -27,6 +27,17 @@ This repo contains a free-tier, OSS-first proof of concept for:
 - **DevSecOps**: Observability-as-Code, CI/CD, scans, policies
 - **Cloud**: AWS Free Tier deployment
 
+## 🚀 Quickstart
+
+> This POC runs locally with Docker Desktop or on an AWS t2.micro (free tier).  
+> Week 1 will add the actual `docker-compose.yml` and configs—this section is a seed you can refine as you build.
+
+### 1) Clone the repo
+```bash
+git clone https://github.com/<your-username>/imoc-poc.git
+cd imoc-poc
+
+
 ## 📂 Structure
 - infra/terraform       — optional AWS provisioning
 - deploy/docker-compose — Week 1 observability stack
