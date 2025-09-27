@@ -63,6 +63,21 @@ jobs:
             exit 1
           fi
 
+      - name: Free Tier eligibility check (instance_type vs region)
+        shell: bash
+        run: |
+          set -euo pipefail
+          itype=$(awk -F\" '/instance_type/ {print $2}' infra/terraform/terraform.tfvars || true)
+          if [ -z "${itype:-}" ]; then itype="t3.micro"; fi  # fallback to TF default if not set
+          echo "Checking Free Tier eligibility for: $itype in region $AWS_REGION"
+          # Query AWS for free-tier-eligible instance types and look for ours
+          aws ec2 describe-instance-types \
+            --filters Name=free-tier-eligible,Values=true \
+            --query "InstanceTypes[].InstanceType" --output text | tr '\t' '\n' | grep -qx "$itype" || {
+              echo "::error::$itype is not Free Tier–eligible in $AWS_REGION. Update terraform.tfvars (instance_type)."
+              exit 1
+            }
+
       # Init before validate/lint/plan/apply
       - name: Terraform Init
         working-directory: infra/terraform
