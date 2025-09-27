@@ -1,0 +1,80 @@
+name: provision-ec2
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: apply or destroy
+        required: true
+        default: apply
+        type: choice
+        options: [apply, destroy]
+
+jobs:
+  tf:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: infra/terraform
+        run: terraform init -input=false
+
+      - name: Terraform Plan
+        if: inputs.action == 'apply'
+        working-directory: infra/terraform
+        run: terraform plan -input=false -out tfplan
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: infra/terraform
+        run: terraform apply -input=false -auto-approve tfplan
+
+      # Capture outputs -> env + job outputs
+      - name: Capture Terraform outputs
+        if: inputs.action == 'apply'
+        id: tf_outputs
+        run: |
+          ip=$(cd infra/terraform && terraform output -raw public_ip)
+          dns=$(cd infra/terraform && terraform output -raw public_dns)
+          echo "VM_IP=$ip"  >> $GITHUB_ENV
+          echo "VM_DNS=$dns" >> $GITHUB_ENV
+          echo "vm_ip=$ip"  >> $GITHUB_OUTPUT
+          echo "vm_dns=$dns" >> $GITHUB_OUTPUT
+          {
+            echo "### Provisioned Host"
+            echo ""
+            echo "- **IP:** $ip"
+            echo "- **DNS:** $dns"
+          } >> $GITHUB_STEP_SUMMARY
+
+      # Update a repository SECRET (requires PAT)      
+      - name: Update VM_HOST secret
+        if: inputs.action == 'apply'
+        uses: gliech/create-github-secret-action@v1
+        env:
+          VM_IP: ${{ steps.tf_outputs.outputs.vm_ip }}
+        with:
+          name: VM_HOST
+          value: ${{ env.VM_IP }}
+          pa_token: ${{ secrets.GH_PAT_ADMIN }}
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        working-directory: infra/terraform
+        run: terraform destroy -auto-approve
