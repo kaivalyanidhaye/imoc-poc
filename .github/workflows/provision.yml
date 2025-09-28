@@ -1,4 +1,5 @@
 name: provision-ec2
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,6 +9,51 @@ on:
         default: apply
         type: choice
         options: [apply, destroy]
+      aws_region:
+        description: AWS Region
+        required: false
+        default: us-east-1
+        type: string
+      instance_type:
+        description: EC2 instance type
+        required: false
+        default: t3.micro
+        type: string
+      instance_name:
+        description: Name tag for the EC2 instance
+        required: false
+        default: itoc-week1
+        type: string
+      key_name:
+        description: EC2 Key Pair name
+        required: false
+        default: itoc-week1-key
+        type: string
+      public_key:
+        description: Public key material (ssh-ed25519 ...). Leave blank to use SSH_PUBLIC_KEY secret.
+        required: false
+        default: ""
+        type: string
+      sg_name:
+        description: Security Group name
+        required: false
+        default: itoc-week1-sg
+        type: string
+      vpc_id:
+        description: Optional VPC id (empty = default VPC)
+        required: false
+        default: ""
+        type: string
+      subnet_id:
+        description: Optional Subnet id (empty = auto-pick avoiding blocked AZs)
+        required: false
+        default: ""
+        type: string
+      blocked_azs:
+        description: JSON list of AZs to avoid when auto-picking a subnet
+        required: false
+        default: '["us-east-1e"]'
+        type: string
 
 jobs:
   tf:
@@ -19,101 +65,156 @@ jobs:
       TF_IN_AUTOMATION: true
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
-      # Lint-friendly: set TF plugin cache dir under the workspace and create it
-      - name: Set TF plugin cache dir
-        shell: bash
+      - name: Set TF plugin cache dir (workspace-relative)
         run: |
           echo "TF_PLUGIN_CACHE_DIR=$GITHUB_WORKSPACE/.tf-cache/plugins" >> "$GITHUB_ENV"
           mkdir -p "$GITHUB_WORKSPACE/.tf-cache/plugins"
 
-      - uses: hashicorp/setup-terraform@v3
+      - name: Setup Terraform
+        # hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: 1.7.5
+          terraform_wrapper: true
 
-      # Cache Terraform provider plugins for faster init on reruns
-      - name: Cache Terraform plugins
-        uses: actions/cache@v4
+      - name: Cache Terraform provider plugins
+        # actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: .tf-cache/plugins
-          key: ${{ runner.os }}-tfplug-${{ hashFiles('infra/terraform/.terraform.lock.hcl') }}
+          key: Linux-tfplug-${{ hashFiles('**/.terraform.lock.hcl') }}
+          fail-on-cache-miss: false
 
-      # AWS credentials
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        # aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: ${{ inputs.aws_region }}
+          output-env-credentials: true
 
-      # Guardrail: Region coherence (terraform.tfvars vs AWS_REGION secret)
-      - name: Check region coherence (tfvars vs secret)
+      - name: Guardrail - region consistency
         shell: bash
         run: |
           set -euo pipefail
-          if [ ! -f infra/terraform/terraform.tfvars ]; then
-            echo "::error::infra/terraform/terraform.tfvars not found"
+          tfvars_region=""
+          if [ -f infra/terraform/terraform.tfvars ]; then
+            tfvars_region=$(grep -E '^\s*aws_region\s*=' infra/terraform/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '[:space:]' || true)
+          fi
+          input_region='${{ inputs.aws_region }}'
+          secret_region='${{ secrets.AWS_REGION }}'
+          echo "tfvars: ${tfvars_region:-<none>} | input: ${input_region:-<none>} | secret: ${secret_region:-<none>}"
+          if [ -n "$tfvars_region" ] && [ "$tfvars_region" != "$input_region" ]; then
+            echo "::error::Region mismatch: terraform.tfvars ($tfvars_region) != workflow input ($input_region)."
             exit 1
           fi
-          tfvars_region=$(grep -E '^\s*aws_region\s*=' infra/terraform/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '[:space:]')
-          echo "tfvars region: $tfvars_region; secret AWS_REGION: ${{ secrets.AWS_REGION }}"
-          if [ -n "${{ secrets.AWS_REGION }}" ] && [ "${{ secrets.AWS_REGION }}" != "$tfvars_region" ]; then
-            echo "::error::Region mismatch. Make terraform.tfvars and AWS_REGION secret the same."
+          if [ -n "$secret_region" ] && [ "$secret_region" != "$input_region" ]; then
+            echo "::error::Region mismatch: secret AWS_REGION ($secret_region) != workflow input ($input_region)."
             exit 1
           fi
 
-      - name: Free Tier eligibility check (instance_type vs region)
+      - name: Guardrail - EC2 Free Tier eligibility
+        if: inputs.action == 'apply'
         shell: bash
         run: |
           set -euo pipefail
-          itype=$(awk -F\" '/instance_type/ {print $2}' infra/terraform/terraform.tfvars || true)
-          if [ -z "${itype:-}" ]; then itype="t3.micro"; fi  # fallback to TF default if not set
-          echo "Checking Free Tier eligibility for: $itype in region $AWS_REGION"
-          # Query AWS for free-tier-eligible instance types and look for ours
+          itype='${{ inputs.instance_type }}'
+          region='${{ inputs.aws_region }}'
+          echo "Checking Free Tier eligibility for: $itype in $region"
           aws ec2 describe-instance-types \
             --filters Name=free-tier-eligible,Values=true \
             --query "InstanceTypes[].InstanceType" --output text | tr '\t' '\n' | grep -qx "$itype" || {
-              echo "::error::$itype is not Free Tier–eligible in $AWS_REGION. Update terraform.tfvars (instance_type)."
-              exit 1
-            }
+            echo "::error::$itype is not Free Tier–eligible in $region."
+            exit 1
+          }
 
-      # Init before validate/lint/plan/apply
+      - name: Resolve/validate inputs
+        env:
+          SECRET_SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pk='${{ inputs.public_key }}'
+          if [ -z "$pk" ]; then pk="${SECRET_SSH_PUBLIC_KEY:-}"; fi
+          if [ -z "$pk" ]; then
+            echo "::error::Provide a public key via the workflow input 'public_key' or set the repository secret SSH_PUBLIC_KEY."
+            exit 1
+          fi
+          echo "EFFECTIVE_PUBLIC_KEY=$pk" >> "$GITHUB_ENV"
+
+      - name: Export TF_VAR_* from inputs
+        shell: bash
+        run: |
+          {
+            echo "TF_VAR_aws_region=${{ inputs.aws_region }}"
+            echo "TF_VAR_instance_type=${{ inputs.instance_type }}"
+            echo "TF_VAR_instance_name=${{ inputs.instance_name }}"
+            echo "TF_VAR_key_name=${{ inputs.key_name }}"
+            # Use the runtime env var set in the previous step:
+            echo "TF_VAR_public_key=$EFFECTIVE_PUBLIC_KEY"
+            echo "TF_VAR_sg_name=${{ inputs.sg_name }}"
+            echo "TF_VAR_vpc_id=${{ inputs.vpc_id }}"
+            echo "TF_VAR_subnet_id=${{ inputs.subnet_id }}"
+            echo "TF_VAR_blocked_azs=${{ inputs.blocked_azs }}"
+          } >> "$GITHUB_ENV"
+
       - name: Terraform Init
         working-directory: infra/terraform
-        env:
-          TF_PLUGIN_CACHE_DIR: ${{ env.TF_PLUGIN_CACHE_DIR }}
         run: terraform init -input=false
 
-      # Guardrail: formatting
-      - name: Terraform Fmt Check
+      - name: Terraform Fmt
         working-directory: infra/terraform
         run: terraform fmt -check -recursive
 
-      # Guardrail: validate
       - name: Terraform Validate
         working-directory: infra/terraform
         run: terraform validate -no-color
 
-      # Guardrail: TFLint (static analysis)
       - name: Setup TFLint
-        uses: terraform-linters/setup-tflint@v5
+        # terraform-linters/setup-tflint@v5
+        uses: terraform-linters/setup-tflint@ae78205cfffec9e8d93fd2b3115c7e9d3166d4b6
         with:
-          tflint_version: v0.59.1 # match your local
+          tflint_version: v0.59.1
 
-      - name: Cache TFLint plugins
-        uses: actions/cache@v4
+      - name: Cache TFLint rules
+        # actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: ~/.tflint.d/plugins
-          key: ${{ runner.os }}-tflint-${{ hashFiles('.tflint.hcl') }}
+          key: Linux-tflint-${{ hashFiles('.tflint.hcl', 'infra/**/.tflint.hcl') }}
+          fail-on-cache-miss: false
 
-      - name: TFLint init
-        run: tflint --init
+      - name: TFLint init & run
+        working-directory: infra/terraform
+        run: |
+          tflint --init
+          tflint --format=compact
 
-      - name: TFLint (compact)
-        run: tflint --format=compact
+      - name: Optional imports (idempotent)
+        if: inputs.action == 'apply'
+        working-directory: infra/terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform state show aws_key_pair.itoc >/dev/null 2>&1 || terraform import aws_key_pair.itoc "${{ inputs.key_name }}"
+          if ! terraform state show aws_security_group.observability >/dev/null 2>&1; then
+            vpc_id="${{ inputs.vpc_id }}"
+            if [ -z "$vpc_id" ]; then
+              vpc_id="$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
+            fi
+            sg_id="$(aws ec2 describe-security-groups \
+              --filters Name=group-name,Values='${{ inputs.sg_name }}' Name=vpc-id,Values="$vpc_id" \
+              --query 'SecurityGroups[0].GroupId' --output text || true)"
+            if [ "$sg_id" != "None" ] && [ -n "$sg_id" ]; then
+              terraform import aws_security_group.observability "$sg_id"
+            fi
+          fi
 
-      # Plan/Apply only for 'apply'
       - name: Terraform Plan
         if: inputs.action == 'apply'
         working-directory: infra/terraform
@@ -124,17 +225,15 @@ jobs:
         working-directory: infra/terraform
         run: terraform apply -input=false -auto-approve tfplan
 
-      # Capture outputs -> env + job outputs + summary
       - name: Capture Terraform outputs
         if: inputs.action == 'apply'
         id: tf_outputs
-        shell: bash
         run: |
           ip=$(cd infra/terraform && terraform output -raw public_ip)
           dns=$(cd infra/terraform && terraform output -raw public_dns)
-          echo "VM_IP=$ip"   >> $GITHUB_ENV
+          echo "VM_IP=$ip"  >> $GITHUB_ENV
           echo "VM_DNS=$dns" >> $GITHUB_ENV
-          echo "vm_ip=$ip"   >> $GITHUB_OUTPUT
+          echo "vm_ip=$ip"  >> $GITHUB_OUTPUT
           echo "vm_dns=$dns" >> $GITHUB_OUTPUT
           {
             echo "### Provisioned Host"
@@ -143,16 +242,17 @@ jobs:
             echo "- **DNS:** $dns"
           } >> $GITHUB_STEP_SUMMARY
 
-      # Update a repository SECRET (requires PAT in GH_PAT_ADMIN)
       - name: Update VM_HOST secret
         if: inputs.action == 'apply'
-        uses: gliech/create-github-secret-action@v1
+        # gliech/create-github-secret-action@v1
+        uses: gliech/create-github-secret-action@ea87807ab20663b30a1a2d14d7f6dd9490b1e7a1
+        env:
+          VM_IP: ${{ steps.tf_outputs.outputs.vm_ip }}
         with:
           name: VM_HOST
-          value: ${{ steps.tf_outputs.outputs.vm_ip }}
+          value: ${{ env.VM_IP }}
           pa_token: ${{ secrets.GH_PAT_ADMIN }}
 
-      # Destroy path
       - name: Terraform Destroy
         if: inputs.action == 'destroy'
         working-directory: infra/terraform

@@ -8,3 +8,4 @@ plugin "aws" {
 # Helpful generic checks
 rule "terraform_unused_declarations"     { enabled = true }
 rule "terraform_deprecated_interpolation" { enabled = true }
+

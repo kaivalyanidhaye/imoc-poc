@@ -1,32 +1,48 @@
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["137112412989"] # Amazon
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-}
-
+# Flexible VPC selection: if var.vpc_id is empty, use the default VPC
 data "aws_vpc" "default" {
+  count   = var.vpc_id == "" ? 1 : 0
   default = true
 }
 
-data "aws_subnets" "default" {
+locals {
+  effective_vpc_id = var.vpc_id != "" ? var.vpc_id : one([for v in data.aws_vpc.default : v.id])
+}
+
+# Discover subnets in the chosen VPC
+data "aws_subnets" "in_vpc" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+    values = [local.effective_vpc_id]
   }
 }
 
-resource "aws_key_pair" "itoc" {
-  key_name   = "${var.instance_name}-key"
-  public_key = var.ssh_public_key
+# Get details for each subnet (to read its AZ)
+data "aws_subnet" "details" {
+  for_each = toset(data.aws_subnets.in_vpc.ids)
+  id       = each.value
 }
 
+# Pick a subnet automatically unless one was provided; avoid blocked AZs (e.g., us-east-1e)
+locals {
+  candidate_subnets = [
+    for s in data.aws_subnet.details :
+    s.id if !contains(var.blocked_azs, s.availability_zone)
+  ]
+  # Use provided subnet if set; otherwise first candidate (or null if none)
+  chosen_subnet_id = var.subnet_id != "" ? var.subnet_id : try(local.candidate_subnets[0], null)
+}
+
+# Decoupled key pair: explicit name + injected public key
+resource "aws_key_pair" "itoc" {
+  key_name   = var.key_name
+  public_key = var.public_key
+}
+
+# SG name is explicit; same open ports as your POC
 resource "aws_security_group" "observability" {
-  name        = "${var.instance_name}-sg"
+  name        = var.sg_name
   description = "Observability Core SG"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = local.effective_vpc_id
 
   # Core access (POC-open; tighten in prod)
   ingress {
@@ -101,12 +117,20 @@ resource "aws_security_group" "observability" {
 }
 
 resource "aws_instance" "itoc" {
-  ami                    = data.aws_ami.al2023.id
+  ami                    = var.ami_id
   instance_type          = var.instance_type
-  subnet_id              = data.aws_subnets.default.ids[0]
-  vpc_security_group_ids = [aws_security_group.observability.id]
   key_name               = aws_key_pair.itoc.key_name
+  subnet_id              = local.chosen_subnet_id
+  vpc_security_group_ids = [aws_security_group.observability.id]
 
+  lifecycle {
+    precondition {
+      condition     = local.chosen_subnet_id != null
+      error_message = "No available subnet found in VPC after excluding blocked AZs. Set var.subnet_id explicitly."
+    }
+  }
+
+  # keep your original bootstrap for Docker-based POC
   user_data = <<-EOF
     #!/usr/bin/bash
     set -eux
