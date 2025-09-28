@@ -159,8 +159,7 @@ jobs:
             echo "TF_VAR_public_key=$EFFECTIVE_PUBLIC_KEY"
             echo "TF_VAR_sg_name=${{ inputs.sg_name }}"
             echo "TF_VAR_vpc_id=${{ inputs.vpc_id }}"
-            echo "TF_VAR_subnet_id=${{ inputs.subnet_id }}"
-            echo "TF_VAR_blocked_azs=${{ inputs.blocked_azs }}"
+            echo "TF_VAR_subnet_id=${{ inputs.subnet_id }}"            
           } >> "$GITHUB_ENV"
 
       - name: Terraform Init
@@ -218,6 +217,8 @@ jobs:
       - name: Terraform Plan
         if: inputs.action == 'apply'
         working-directory: infra/terraform
+        env:
+          TF_VAR_blocked_azs: ${{ inputs.blocked_azs }}
         run: terraform plan -input=false -out tfplan
 
       - name: Terraform Apply
